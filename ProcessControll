@@ -1,0 +1,91 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Windows.Forms.DataVisualization.Charting;
+
+namespace SimpleControlExample
+{
+    public partial class Form1 : Form
+    {
+       double Ts = 0.1;
+        double x = 0;
+      
+
+        double Kp = 0.3, Ti = 5, r = 4;
+            double u = 0, z = 0;
+
+        public Form1()
+        {
+            InitializeComponent();
+            txtKp.Text = Kp.ToString();
+            txtTi.Text = Ti.ToString();
+            txtR.Text = r.ToString();
+
+            chartMeasurementData.Series.Clear();
+            chartMeasurementData.Series.Add("ProcessValue");
+            chartMeasurementData.Series["ProcessValue"].ChartType = System.Windows.Forms.DataVisualization.Charting.SeriesChartType.Line;
+            ChartArea area1 = chartMeasurementData.ChartAreas[0];
+
+            area1.AxisY.Minimum = 0;
+            area1.AxisY.Maximum = 10;
+
+            TimerSimulationLoop.Interval = Convert.ToInt32(Ts*1000);
+            TimerSimulationLoop.Start();
+            
+        }
+
+        private void txtKp_TextChanged(object sender, EventArgs e)
+        {
+            Kp = Convert.ToDouble(txtKp.Text);
+        }
+
+        private void txtTi_TextChanged(object sender, EventArgs e)
+        {
+            Ti = Convert.ToDouble(txtTi.Text);
+        }
+
+        private void txtR_TextChanged(object sender, EventArgs e)
+        {
+            r = Convert.ToDouble(txtR.Text);
+        }
+
+        double DiscreteModel(double xk, double u)
+        {
+            double a = 0.25;
+            double b = 2;
+            double xk1;
+
+            xk1 = (1 - Ts * a) * xk + Ts * b * u;
+            return xk1;
+        }
+
+        double PIController(double y)
+        {
+            double uk=0;
+            double e = r - y;
+
+            uk = Kp * e + (Kp / Ti) * z;
+            z = z + Ts * e;
+
+            return uk;
+        }
+
+        private void TimerSimulationLoop_Tick(object sender, EventArgs e)
+        {
+            u = PIController(x);
+            
+            x = DiscreteModel(x, u);
+            txtOutput.Text = x.ToString("0.##");
+            txtInput.Text = u.ToString("0.##");
+
+            chartMeasurementData.Series["ProcessValue"].Points.AddY(x);
+
+        }
+    }
+}
