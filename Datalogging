@@ -1,0 +1,160 @@
+using NationalInstruments.NetworkVariable;
+using System;
+using System.Data;
+using System.Data.SqlClient;
+using System.Linq;
+using System.Windows.Forms;
+using System.Windows.Forms.DataVisualization.Charting;
+
+namespace DataLogginOPCCLientSQL
+{
+    public partial class Form1 : Form
+    {
+        double Temperature;
+        private NetworkVariableReader<double> _reader;
+        private const string NetworkVariableLocation = @"\\localhost\OPCProcess\Temperature";
+        string connectionString = "Data Source = DESKTOP - M7KT76S\\SQLEXPRESS;Initial Catalog = Scada_Systems2; Trusted_Connection=yes";
+        SqlConnection con = new SqlConnection("Integrated Security=SSPI;Persist Security Info=False;Initial" +
+                                " Catalog=Scada_Systems2;Data Source=DESKTOP-M7KT76S\\SQLEXPRESS");
+
+        public Form1()
+        {
+            InitializeComponent();
+            ConnectOPCServer();
+
+            chartProcessValue.Series.Clear();
+            chartProcessValue.Series.Add("ProcessValue");
+            chartProcessValue.Series["ProcessValue"].ChartType = System.Windows.Forms.DataVisualization.Charting.SeriesChartType.Line;
+            ChartArea area1 = chartProcessValue.ChartAreas[0];
+
+
+            area1.AxisY.Minimum = 20;
+            area1.AxisY.Maximum = 35;
+
+
+            TimerGetData.Interval = 1100;
+            TimerGetData.Start();
+            TimerWriteSQL.Interval = 1000;
+            TimerWriteSQL.Start();
+
+
+
+
+        }
+
+        private void ConnectOPCServer()
+        {
+            _reader = new NetworkVariableReader<double>(NetworkVariableLocation);
+            _reader.Connect();
+            txtStatus.Text = _reader.ConnectionStatus.ToString();
+
+
+
+        }
+        private void StatusSql()
+        {
+            txtSQLConnection.Text = "Writing Data";
+        }
+
+        private void TimerGetData_Tick(object sender, EventArgs e)
+        {
+            ReadOPC();
+        }
+        private void ReadOPC()
+        {
+            NetworkVariableData<double> opcdata = null;
+            try
+            {
+                StatusSql();
+                opcdata = _reader.ReadData();
+                Temperature = opcdata.GetValue();
+                txtTemperature.Text = Temperature.ToString("0.##");
+
+
+
+
+
+            }
+            catch (TimeoutException)
+            {
+                MessageBox.Show("The read has timed out.", "Timeout");
+                return;
+            }
+        }
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            _reader.Disconnect();
+            con.Close();
+
+        }
+
+        private void TimerWriteSQL_Tick(object sender, EventArgs e)
+        {
+            try
+            {
+                chartProcessValue.Series["ProcessValue"].Points.AddY(Temperature);
+                string selectSQL = String.Format(" exec SaveMeasurementData '{0}', '{1}' ", Convert.ToDouble(Temperature), Convert.ToDouble(numTag.Value));
+
+                con.Open();
+                SqlCommand cmd = new SqlCommand(selectSQL, con);
+                cmd.ExecuteNonQuery();
+                con.Close();
+                //FillDataGrid();
+
+            }
+            catch (TimeoutException)
+            {
+                MessageBox.Show("The read has timed outsql.", "Timeout");
+                return;
+            }
+
+        }
+        private void FillDataGrid()
+        {
+            //Må laste data inn i en list...
+
+            con.Open();
+            string selectSQL = String.Format(" select * from SCADA_SYSTEMS1");
+
+
+            SqlCommand cmd = new SqlCommand(selectSQL, con);
+
+
+            gridSQLRead.DataSource = cmd.ExecuteReader();
+            con.Close();
+        }
+
+        private void numTag_AfterChangeValue(object sender, NationalInstruments.UI.AfterChangeNumericValueEventArgs e)
+        {
+            
+            try
+            {
+
+                string selectSQL = String.Format("SELECT TagName from TAGCONFIGURATION where TagId = {0}", numTag.Value);
+
+                con.Open();
+                SqlCommand cmd = new SqlCommand(selectSQL, con);
+                SqlDataReader dr = cmd.ExecuteReader();
+                if (dr!=null)
+                {
+                    while(dr.Read())
+                    {
+                        txtTag.Text = Convert.ToString(dr["TagName"]);
+                    }
+                   
+                }
+                
+                con.Close();
+                
+            }
+            catch (TimeoutException)
+            {
+                MessageBox.Show("The read has timed outsql.", "Timeout");
+                return;
+            }
+        }
+        
+        
+
+    }
+}
