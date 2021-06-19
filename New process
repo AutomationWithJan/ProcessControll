@@ -1,0 +1,196 @@
+using NationalInstruments;
+using NationalInstruments.NetworkVariable;
+using NationalInstruments.NetworkVariable.WindowsForms;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Windows.Forms.DataVisualization.Charting;
+using System.Data.SqlClient;
+using System.Data.SqlTypes;
+
+namespace DiffEquation
+{
+    public partial class Form1 : Form
+    {
+        double Ts = 0.1;
+        double x = 20;
+
+        double Ot = 22, Od = 2, Kh = 3.5, Tenv = 21.5;
+        
+
+        double Kp = 0.3, Ti = 5, r = 21;
+        double u = 0, z = 0;
+        string TagName;
+        int ItemId;
+
+        private NetworkVariableReader<double> _reader;
+        private  string NetworkVariableLocation = @"\\localhost\OPCProcess\Temperature";
+        private string OPCInfotxt = "Matrikon OPC";
+        private NetworkVariableWriter<double> _writer;
+
+       
+        string connectionString = "Data Source = DESKTOP - M7KT76S\\SQLEXPRESS;Initial Catalog = Scada_Systems2; Trusted_Connection=yes";
+        SqlConnection con = new SqlConnection("Integrated Security=SSPI;Persist Security Info=False;Initial" +
+                                " Catalog=Scada_Systems2;Data Source=DESKTOP-M7KT76S\\SQLEXPRESS");
+
+        public Form1()
+        {
+            InitializeComponent();
+            ConnectOPCServer();
+
+            txtKp.Text = Kp.ToString();
+            txtTi.Text = Ti.ToString();
+            txtR.Text = r.ToString();
+            txtOPCInfo.Text = OPCInfotxt;
+            txtOPCUrl.Text = NetworkVariableLocation;
+
+            chartMeasurementData.Series.Clear();
+            chartMeasurementData.Series.Add("ProcessValue");
+            chartMeasurementData.Series["ProcessValue"].ChartType = System.Windows.Forms.DataVisualization.Charting.SeriesChartType.Line;
+            ChartArea area1 = chartMeasurementData.ChartAreas[0];
+
+            area1.AxisY.Minimum = 20;
+            area1.AxisY.Maximum = 35;
+
+            TimerSimulation.Interval = Convert.ToInt32(Ts * 1000);
+            TimerSimulation.Start();
+            TimerOPC.Interval = 1100;
+            TimerOPC.Start();
+         
+
+        }
+        private void ConnectOPCServer()
+        {
+            _reader = new NetworkVariableReader
+                <double>(NetworkVariableLocation);
+            _reader.Connect();
+            txtOPCstatus.Text = 
+                _reader.ConnectionStatus.ToString();
+            _writer = new NetworkVariableWriter
+                <Double>(NetworkVariableLocation);
+            _writer.Connect();
+
+        }
+
+        private void TimerOPC_Tick(object sender, EventArgs e)
+        {
+            
+            try
+            {
+
+                _writer.WriteValue(x);
+
+            }
+            catch (TimeoutException)
+            {
+                MessageBox.Show("The read has timed out.", "Timeout");
+                return;
+            }
+        }
+
+        private void TimerSimulation_Tick(object sender, EventArgs e)
+        {
+            u = PIController(x);
+            x = DiscreteModel(x, u);
+
+            txtOutput.Text = x.ToString("0.##");
+            txtControl.Text = u.ToString("0.##");
+
+            chartMeasurementData.Series["ProcessValue"].Points.AddY(x);
+
+            
+
+        }
+
+        private void txtOPCUrl_TextChanged(object sender, EventArgs e)
+        {
+            NetworkVariableLocation = txtOPCUrl.Text;
+        }
+
+        private void txtOPCInfo_TextChanged(object sender, EventArgs e)
+        {
+            OPCInfotxt = txtOPCInfo.Text;
+        }
+
+        private void btnStoreTag_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                
+                string selectSQL = 
+                    String.Format(" exec SaveTagData '{0}','{1}','{2}','{3}' ",
+                    TagName, ItemId, NetworkVariableLocation, OPCInfotxt);
+
+                con.Open();
+                SqlCommand cmd = new SqlCommand(selectSQL, con);
+                cmd.ExecuteNonQuery();
+                con.Close();
+                //FillDataGrid();
+
+            }
+            catch (TimeoutException)
+            {
+                MessageBox.Show("The read has timed out sql.", "Timeout");
+                return;
+            }
+        }
+
+        private void txtStoreTag_TextChanged(object sender, EventArgs e)
+        {
+            TagName = txtStoreTag.Text;
+        }
+
+        private void numTag_AfterChangeValue(object sender, NationalInstruments.UI.AfterChangeNumericValueEventArgs e)
+        {
+            ItemId = Convert.ToInt32(numTag.Value);
+        }
+
+        private void txtKp_TextChanged(object sender, EventArgs e)
+        {
+            Kp = Convert.ToDouble(txtKp.Text);
+        }
+
+        private void txtTi_TextChanged(object sender, EventArgs e)
+        {
+            Ti = Convert.ToDouble(txtTi.Text);
+        }
+
+        private void txtR_TextChanged(object sender, EventArgs e)
+        {
+            r = Convert.ToDouble(txtR.Text);
+        }
+
+        double DiscreteModel(double xk, double u)
+        {
+            double xk1;
+            xk1 = xk + (Ts / Ot) * (-xk + (Kh * u + Tenv));
+
+            return xk1;
+        }
+        double PIController(double y)
+        {
+            double uk = 0;
+            double e = r - y;
+
+            uk = Kp * e + (Kp / Ti) * z;
+            z = z + Ts * e;
+
+            return uk;
+        }
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            _reader.Disconnect();
+            _writer.Disconnect();
+        }
+
+
+
+
+    }
+}
